@@ -1,5 +1,12 @@
 ## 0.9.2 (Unreleased)
 
+__BACKWARDS INCOMPATIBILITIES:__
+
+ * client: On startup a client will reattach to running tasks as before but
+   will not restart exited tasks. Exited tasks will be restarted only after the
+   client has reestablished communication with servers. System jobs will always
+   be restarted. [[GH-5669](https://github.com/hashicorp/nomad/pull/5669)]
+
 FEATURES:
 
  * core: Add `nomad alloc restart` command to restart allocs and tasks [[GH-5502](https://github.com/hashicorp/nomad/pull/5502)]
