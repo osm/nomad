@@ -387,6 +387,7 @@ func (s *HTTPServer) jobUpdate(resp http.ResponseWriter, req *http.Request,
 	if region == "" {
 		region = *args.Job.Region
 	}
+	s.logger.Error("DEBUGGGGGING", "api_region", args.WriteRequest.Region, "config_region", *args.Job.Region, "result", region)
 
 	regReq := structs.JobRegisterRequest{
 		Job:            sJob,

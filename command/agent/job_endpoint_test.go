@@ -466,59 +466,99 @@ func TestHTTP_JobUpdate(t *testing.T) {
 }
 
 func TestHTTP_JobUpdateRegion(t *testing.T) {
+	cases := []struct{
+		Name string
+		ConfigRegion string
+		APIRegion string
+		ExpectedRegion *string
+		ExpectedError *string
+	}{
+		{
+			Name: "api region takes precedence",
+			ConfigRegion: "not-global",
+			APIRegion: "north-america",
+			ExpectedRegion: helper.StringToPtr("north-america"),
+		},
+		{
+			Name: "config region is set",
+			ConfigRegion: "north-america",
+			APIRegion: "",
+			ExpectedRegion: helper.StringToPtr("north-america"),
+		},
+		{
+			Name: "api region is set",
+			ConfigRegion: "",
+			APIRegion: "north-america",
+			ExpectedRegion: helper.StringToPtr("north-america"),
+		},
+		{
+			Name: "errors when neither region set",
+			ConfigRegion: "",
+			APIRegion: "",
+		},
+	}
 	t.Parallel()
-	httpTest(t, nil, func(s *TestAgent) {
-		// Create the job
-		job := MockRegionalJob()
-		args := api.JobRegisterRequest{
-			Job: job,
-			WriteRequest: api.WriteRequest{
-				Namespace: api.DefaultNamespace,
-			},
-		}
-		buf := encodeReq(args)
 
-		// Make the HTTP request
-		req, err := http.NewRequest("PUT", "/v1/job/"+*job.ID, buf)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
-		respW := httptest.NewRecorder()
 
-		// Make the request
-		obj, err := s.Server.JobSpecificRequest(respW, req)
-		if err != nil {
-			t.Fatalf("err: %v", err)
-		}
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			httpTest(t, func(c *Config) { c.Region = "north-america" }, func(s *TestAgent) {
+				// Create the job
+				job := MockRegionalJob()
 
-		// Check the response
-		dereg := obj.(structs.JobRegisterResponse)
-		if dereg.EvalID == "" {
-			t.Fatalf("bad: %v", dereg)
-		}
+				if tc.ConfigRegion == "" {
+					job.Region = nil
+				} else {
+					job.Region = &tc.ConfigRegion
+				}
 
-		// Check for the index
-		if respW.HeaderMap.Get("X-Nomad-Index") == "" {
-			t.Fatalf("missing index")
-		}
+				args := api.JobRegisterRequest{
+					Job: job,
+					WriteRequest: api.WriteRequest{
+						Namespace: api.DefaultNamespace,
+						Region:    tc.APIRegion,
+					},
+				}
 
-		// Check the job is registered
-		getReq := structs.JobSpecificRequest{
-			JobID: *job.ID,
-			QueryOptions: structs.QueryOptions{
-				Region:    "not-global",
-				Namespace: structs.DefaultNamespace,
-			},
-		}
-		var getResp structs.SingleJobResponse
-		if err := s.Agent.RPC("Job.GetJob", &getReq, &getResp); err != nil {
-			t.Fatalf("err: %v", err)
-		}
+				buf := encodeReq(args)
 
-		if getResp.Job == nil {
-			t.Fatalf("job does not exist")
-		}
-	})
+				// Make the HTTP request
+				url := "/v1/job/" + *job.ID
+
+				req, err := http.NewRequest("PUT", url, buf)
+				require.NoError(t, err)
+				respW := httptest.NewRecorder()
+
+				// Make the request
+				obj, err := s.Server.JobSpecificRequest(respW, req)
+				require.NoError(t, err)
+
+				// Check the response
+				dereg := obj.(structs.JobRegisterResponse)
+				require.NotEmpty(t, dereg.EvalID)
+
+				// Check for the index
+				require.NotEmpty(t, respW.HeaderMap.Get("X-Nomad-Index"), "missing index")
+
+				if tc.ExpectedRegion != nil {
+					// Check the job is registered
+					getReq := structs.JobSpecificRequest{
+						JobID: *job.ID,
+						QueryOptions: structs.QueryOptions{
+							Region:    "north-america",
+							Namespace: structs.DefaultNamespace,
+						},
+					}
+					var getResp structs.SingleJobResponse
+					err = s.Agent.RPC("Job.GetJob", &getReq, &getResp)
+
+					require.NoError(t, err)
+					require.NotNil(t, getResp.Job, "job does not exist")
+					require.Equal(t, *tc.ExpectedRegion, getResp.Job.Region)
+				}
+			})
+		})
+	}
 }
 
 func TestHTTP_JobDelete(t *testing.T) {
